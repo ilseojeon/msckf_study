@@ -5,6 +5,16 @@
 #include <iterator>
 #include <random>
 
+inline Eigen::Matrix3d Skew(const Eigen::Vector3d& vec) {
+    Eigen::Matrix3d skew_mat;
+
+    skew_mat << 0, -vec(2), vec(1),
+vec(2), 0, -vec(0),
+-vec(1), vec(0), 0;
+
+    return skew_mat;
+}
+
 inline Eigen::Matrix<double, 3, 1> so3LogMap(const Eigen::Matrix<double, 3, 3>& SO3) {
 Eigen::Matrix<double, 3, 1> so3;
 double trace = SO3.trace();
@@ -39,10 +49,7 @@ return so3;
 inline Eigen::Matrix<double, 3, 3> SO3ExpMap(const Eigen::Matrix<double, 3, 1>& so3) {
 Eigen::Matrix<double, 3, 3> SO3;
 
-Eigen::Matrix<double, 3, 3> skew;
-skew << 0, -so3(2), so3(1),
-so3(2), 0, -so3(0),
--so3(1), so3(0), 0;
+Eigen::Matrix<double, 3, 3> skew = Skew(so3);
 
 double theta = so3.norm();
 double a1;
@@ -84,6 +91,15 @@ inline Eigen::Matrix<double, 3, 1> CalRes(const Eigen::Matrix<double, 6, 1>& sta
     return res;
 }
 
+inline Eigen::Matrix<double, 3, 6> CalJacobian(const Eigen::Matrix<double, 6, 1>& state, const Eigen::Matrix<double, 3, 1>& pt_prime) {
+    Eigen::Matrix<double, 3, 6> jacobian;
+
+    jacobian.block(0, 0, 3, 3) = -Skew(SO3ExpMap(state.segment(0, 3)).transpose() * pt_prime);
+    jacobian.block(0, 3, 3, 3) = Eigen::Matrix3d::Identity(); 
+
+    return jacobian;
+}
+
 int main(int argc, char** argv) {
 Eigen::Matrix<double, 3, 3> SO3;
 SO3 << -1, 0, 0, 
@@ -120,7 +136,7 @@ pts.emplace_back(3, 4, 2);
 pts_prime.reserve(num_of_pts);
 
 for (auto& pt : pts) {
-    auto tmp = SO3.transpose() * pt - Eigen::Vector3d(10, 0, 0) + Eigen::Vector3d(1, 1, 1) * AddNoise(0.0, 0.1, 0.01);
+    auto tmp = SO3.transpose() * pt - initial_pose.segment(0, 3) + Eigen::Vector3d(1, 1, 1) * AddNoise(0.0, 0.1, 0.01);
     pts_prime.emplace_back(tmp);
 }
 
@@ -132,4 +148,16 @@ for (unsigned int i = 0; i < num_of_pts; i++) {
     res.emplace_back(tmp);
     std::cout << res.at(i) << std::endl;
 }
+
+// HW 6
+Eigen::MatrixXd jacobian;
+jacobian.resize(3 * num_of_pts, 6);
+unsigned int row_idx = 0;
+std::cout << "jacobian" << std::endl;
+for (unsigned int i = 0; i < num_of_pts; i++) {
+    auto tmp = CalJacobian(initial_pose, pts_prime.at(i));
+    jacobian.block(row_idx, 0, tmp.rows(), tmp.cols()) = tmp;
+    row_idx = row_idx + 3;
+}
+std::cout << jacobian << std::endl;
 }
