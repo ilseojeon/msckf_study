@@ -100,6 +100,15 @@ inline Eigen::Matrix<double, 3, 6> CalJacobian(const Eigen::Matrix<double, 6, 1>
     return jacobian;
 }
 
+inline Eigen::Matrix<double, 6, 1> Caldx(const Eigen::MatrixXd& jacobian, const Eigen::MatrixXd& residual) {
+    Eigen::Matrix<double, 6, 1> dx;
+    Eigen::MatrixXd jacobiant_by_jacobian_inverse;
+    jacobiant_by_jacobian_inverse = (jacobian.transpose() * jacobian).inverse();
+    dx = jacobiant_by_jacobian_inverse * jacobian.transpose() * residual;
+
+    return dx;
+}
+
 int main(int argc, char** argv) {
 Eigen::Matrix<double, 3, 3> SO3;
 SO3 << -1, 0, 0, 
@@ -136,23 +145,27 @@ pts.emplace_back(3, 4, 2);
 pts_prime.reserve(num_of_pts);
 
 for (auto& pt : pts) {
-    auto tmp = SO3.transpose() * pt - initial_pose.segment(0, 3) + Eigen::Vector3d(1, 1, 1) * AddNoise(0.0, 0.1, 0.01);
+    auto tmp = SO3.transpose() * pt - initial_pose.segment(3, 3) + Eigen::Vector3d(1, 1, 1) * AddNoise(0.0, 0.1, 0.01);
     pts_prime.emplace_back(tmp);
 }
+unsigned int row_idx = 0;
 
-std::vector<Eigen::Matrix<double, 3, 1>> res;
-res.reserve(num_of_pts);
+// HW 5 Calculate residual and stack them
+Eigen::MatrixXd res;
+res.resize(3 * num_of_pts, 1);
 std::cout << "RESIDUAL" << std::endl;
 for (unsigned int i = 0; i < num_of_pts; i++) {
     auto tmp = CalRes(initial_pose, pts.at(i), pts_prime.at(i));
-    res.emplace_back(tmp);
-    std::cout << res.at(i) << std::endl;
+    res.block(row_idx, 0, tmp.rows(), tmp.cols()) = tmp;
+    row_idx = row_idx + 3;
 }
+std::cout << res << std::endl;
 
-// HW 6
+
+// HW 6 Calculate jacobian and stack them
 Eigen::MatrixXd jacobian;
 jacobian.resize(3 * num_of_pts, 6);
-unsigned int row_idx = 0;
+row_idx = 0;
 std::cout << "jacobian" << std::endl;
 for (unsigned int i = 0; i < num_of_pts; i++) {
     auto tmp = CalJacobian(initial_pose, pts_prime.at(i));
@@ -160,4 +173,11 @@ for (unsigned int i = 0; i < num_of_pts; i++) {
     row_idx = row_idx + 3;
 }
 std::cout << jacobian << std::endl;
+
+// HW 7
+auto dx = Caldx(jacobian, res);
+std::cout << "dx" << std::endl;
+std::cout << dx << std::endl;
+
+// HW 8
 }
