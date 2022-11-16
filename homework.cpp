@@ -16,60 +16,60 @@ vec(2), 0, -vec(0),
 }
 
 inline Eigen::Matrix<double, 3, 1> so3LogMap(const Eigen::Matrix<double, 3, 3>& SO3) {
-Eigen::Matrix<double, 3, 1> so3;
-double trace = SO3.trace();
+    Eigen::Matrix<double, 3, 1> so3;
+    double trace = SO3.trace();
 
-// when trace == -1, i.e., when theta = +-pi, +-3pi, +-5pi, etc.
-// we do something special
-if (trace + 1.0 < 1e-10) {
-    if (std::abs(SO3(2, 2) + 1.0) > 1e-5)
-        so3 = (M_PI / sqrt(2.0 + 2.0 * SO3(2, 2))) * Eigen::Vector3d(SO3(0, 2), SO3(1, 2), 1.0 + SO3(2, 2));
-    else if (std::abs(SO3(1, 1) + 1.0) > 1e-5)
-        so3 = (M_PI / sqrt(2.0 + 2.0 * SO3(1, 1))) * Eigen::Vector3d(SO3(0, 1), 1.0 + SO3(1, 1), SO3(2, 1));
-    else
-        // if(std::abs(R.r1_.x()+1.0) > 1e-5)  This is implicit
-        so3 = (M_PI / sqrt(2.0 + 2.0 * SO3(0, 0))) * Eigen::Vector3d(1.0 + SO3(0, 0), SO3(1, 0), SO3(2, 0));
-} else {
-    double magnitude;
-    const double tr_3 = trace - 3.0; // always negative
-    if (tr_3 < -1e-7) {
-        double theta = acos((trace - 1.0) / 2.0);
-        magnitude = theta / (2.0 * sin(theta));
+    // when trace == -1, i.e., when theta = +-pi, +-3pi, +-5pi, etc.
+    // we do something special
+    if (trace + 1.0 < 1e-10) {
+        if (std::abs(SO3(2, 2) + 1.0) > 1e-5)
+            so3 = (M_PI / sqrt(2.0 + 2.0 * SO3(2, 2))) * Eigen::Vector3d(SO3(0, 2), SO3(1, 2), 1.0 + SO3(2, 2));
+        else if (std::abs(SO3(1, 1) + 1.0) > 1e-5)
+            so3 = (M_PI / sqrt(2.0 + 2.0 * SO3(1, 1))) * Eigen::Vector3d(SO3(0, 1), 1.0 + SO3(1, 1), SO3(2, 1));
+        else
+            // if(std::abs(R.r1_.x()+1.0) > 1e-5)  This is implicit
+            so3 = (M_PI / sqrt(2.0 + 2.0 * SO3(0, 0))) * Eigen::Vector3d(1.0 + SO3(0, 0), SO3(1, 0), SO3(2, 0));
     } else {
-        // when theta near 0, +-2pi, +-4pi, etc. (trace near 3.0)
-        // use Taylor expansion: theta \approx 1/2-(t-3)/12 + O((t-3)^2)
-        // see https://github.com/borglab/gtsam/issues/746 for details
-        magnitude = 0.5 - tr_3 / 12.0;
+        double magnitude;
+        const double tr_3 = trace - 3.0; // always negative
+        if (tr_3 < -1e-7) {
+            double theta = acos((trace - 1.0) / 2.0);
+            magnitude = theta / (2.0 * sin(theta));
+        } else {
+            // when theta near 0, +-2pi, +-4pi, etc. (trace near 3.0)
+            // use Taylor expansion: theta \approx 1/2-(t-3)/12 + O((t-3)^2)
+            // see https://github.com/borglab/gtsam/issues/746 for details
+            magnitude = 0.5 - tr_3 / 12.0;
+        }
+        so3 = magnitude * Eigen::Vector3d(SO3(2, 0) - SO3(1, 2), SO3(0, 2) - SO3(2, 0), SO3(1, 0) - SO3(0, 1));
     }
-    so3 = magnitude * Eigen::Vector3d(SO3(2, 0) - SO3(1, 2), SO3(0, 2) - SO3(2, 0), SO3(1, 0) - SO3(0, 1));
-}
-return so3;
+    return so3;
 }
 
 inline Eigen::Matrix<double, 3, 3> SO3ExpMap(const Eigen::Matrix<double, 3, 1>& so3) {
-Eigen::Matrix<double, 3, 3> SO3;
+    Eigen::Matrix<double, 3, 3> SO3;
 
-Eigen::Matrix<double, 3, 3> skew = Skew(so3);
+    Eigen::Matrix<double, 3, 3> skew = Skew(so3);
 
-double theta = so3.norm();
-double a1;
-double a2;
+    double theta = so3.norm();
+    double a1;
+    double a2;
 
-if (theta < 1e-7) {
-    a1 = 1;
-    a2 = 0.5;
-} else {
-    a1 = sin(theta) / theta;
-    a2 = (1 - cos(theta)) / (theta * theta);
-}
+    if (theta < 1e-7) {
+        a1 = 1;
+        a2 = 0.5;
+    } else {
+        a1 = sin(theta) / theta;
+        a2 = (1 - cos(theta)) / (theta * theta);
+    }
 
-if (theta == 0) {
-    SO3 = Eigen::Matrix3d::Identity();
-} else {
-    SO3 = Eigen::Matrix3d::Identity() + a1 * skew + a2 * skew * skew;
-}
+    if (theta == 0) {
+        SO3 = Eigen::Matrix3d::Identity();
+    } else {
+        SO3 = Eigen::Matrix3d::Identity() + a1 * skew + a2 * skew * skew;
+    }
 
-return SO3;
+    return SO3;
 }
 
 inline double AddNoise(double mean, double stddev, double scale) {
@@ -109,6 +109,18 @@ inline Eigen::Matrix<double, 6, 1> Caldx(const Eigen::MatrixXd& jacobian, const 
     return dx;
 }
 
+inline Eigen::Matrix<double, 3, 1> RecalRes(const Eigen::Matrix<double, 6, 1>& state, const Eigen::Matrix<double, 6, 1>& dx, const Eigen::Matrix<double, 3, 1>& pt, const Eigen::Matrix<double, 3, 1>& pt_prime) {
+    Eigen::Matrix<double, 3, 1> res;
+    auto dR = SO3ExpMap(dx.segment(0, 3)).transpose();
+    auto dt = -dR * dx.segment(3, 3);
+    auto R = SO3ExpMap(state.segment(0, 3)).transpose();
+    auto t = -R * state.segment(3, 3);
+
+    res = dR * R * pt_prime + t + dt - pt;
+
+    return res;
+}
+
 int main(int argc, char** argv) {
 Eigen::Matrix<double, 3, 3> SO3;
 SO3 << -1, 0, 0, 
@@ -127,8 +139,11 @@ std::cout << se3 << std::endl;
 
 // HW 2 Get initial pose (state)
 Eigen::Matrix<double, 6, 1> initial_pose(se3);
-for (auto& x : initial_pose) {
+for (auto& x : initial_pose.segment(0, 3)) {
     x = x + AddNoise(0.0, 0.1, 0.01);
+}
+for (auto& x : initial_pose.segment(3, 3)) {
+    x = x + AddNoise(0.0, 0.1, 0.1);
 }
 
 std::cout << "Initial Guess : " << std::endl;
@@ -145,7 +160,7 @@ pts.emplace_back(3, 4, 2);
 pts_prime.reserve(num_of_pts);
 
 for (auto& pt : pts) {
-    auto tmp = SO3.transpose() * pt - initial_pose.segment(3, 3) + Eigen::Vector3d(1, 1, 1) * AddNoise(0.0, 0.1, 0.01);
+    auto tmp = SO3 * (pt + Eigen::Vector3d(1, 1, 1) * AddNoise(0.0, 0.1, 0.1)) - initial_pose.segment(3, 3);
     pts_prime.emplace_back(tmp);
 }
 unsigned int row_idx = 0;
@@ -153,14 +168,11 @@ unsigned int row_idx = 0;
 // HW 5 Calculate residual and stack them
 Eigen::MatrixXd res;
 res.resize(3 * num_of_pts, 1);
-std::cout << "RESIDUAL" << std::endl;
 for (unsigned int i = 0; i < num_of_pts; i++) {
     auto tmp = CalRes(initial_pose, pts.at(i), pts_prime.at(i));
     res.block(row_idx, 0, tmp.rows(), tmp.cols()) = tmp;
     row_idx = row_idx + 3;
 }
-std::cout << res << std::endl;
-
 
 // HW 6 Calculate jacobian and stack them
 Eigen::MatrixXd jacobian;
@@ -180,4 +192,16 @@ std::cout << "dx" << std::endl;
 std::cout << dx << std::endl;
 
 // HW 8
+Eigen::MatrixXd new_res;
+new_res.resize(3 * num_of_pts, 1);
+row_idx = 0;
+for (unsigned int i = 0; i < num_of_pts; i++) {
+    auto tmp = RecalRes(initial_pose, dx, pts.at(i), pts_prime.at(i));
+    new_res.block(row_idx, 0, tmp.rows(), tmp.cols()) = tmp;
+    row_idx = row_idx + 3;
+}
+std::cout << "residual old" << std::endl;
+std::cout << res << std::endl;
+std::cout << "residual new" << std::endl;
+std::cout << new_res << std::endl;
 }
