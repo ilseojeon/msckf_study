@@ -111,12 +111,12 @@ inline Eigen::Matrix<double, 6, 1> Caldx(const Eigen::MatrixXd& jacobian, const 
 
 inline Eigen::Matrix<double, 3, 1> RecalRes(const Eigen::Matrix<double, 6, 1>& state, const Eigen::Matrix<double, 6, 1>& dx, const Eigen::Matrix<double, 3, 1>& pt, const Eigen::Matrix<double, 3, 1>& pt_prime) {
     Eigen::Matrix<double, 3, 1> res;
-    auto dR = SO3ExpMap(dx.segment(0, 3)).transpose();
-    auto dt = -dR * dx.segment(3, 3);
+    auto dR = SO3ExpMap(dx.segment(0, 3));
+    auto dt = dx.segment(3, 3);
     auto R = SO3ExpMap(state.segment(0, 3)).transpose();
     auto t = -R * state.segment(3, 3);
 
-    res = dR * R * pt_prime + t + dt - pt;
+    res = pt - (dR * R * pt_prime - t - dt);
 
     return res;
 }
@@ -140,10 +140,10 @@ std::cout << se3 << std::endl;
 // HW 2 Get initial pose (state)
 Eigen::Matrix<double, 6, 1> initial_pose(se3);
 for (auto& x : initial_pose.segment(0, 3)) {
-    x = x + AddNoise(0.0, 0.1, 0.01);
+    x = x + AddNoise(0.0, 1, 0.01);
 }
 for (auto& x : initial_pose.segment(3, 3)) {
-    x = x + AddNoise(0.0, 0.1, 0.1);
+    x = x + AddNoise(0.0, 1, 0.01);
 }
 
 std::cout << "Initial Guess : " << std::endl;
@@ -160,7 +160,7 @@ pts.emplace_back(3, 4, 2);
 pts_prime.reserve(num_of_pts);
 
 for (auto& pt : pts) {
-    auto tmp = SO3 * (pt + Eigen::Vector3d(1, 1, 1) * AddNoise(0.0, 0.1, 0.1)) - initial_pose.segment(3, 3);
+    auto tmp = SO3.transpose() * pt + SO3.transpose() * se3.segment(3, 3);
     pts_prime.emplace_back(tmp);
 }
 unsigned int row_idx = 0;
@@ -186,12 +186,12 @@ for (unsigned int i = 0; i < num_of_pts; i++) {
 }
 std::cout << jacobian << std::endl;
 
-// HW 7
+// HW 7 Calculate dx
 auto dx = Caldx(jacobian, res);
 std::cout << "dx" << std::endl;
 std::cout << dx << std::endl;
 
-// HW 8
+// HW 8 Calculate new residual
 Eigen::MatrixXd new_res;
 new_res.resize(3 * num_of_pts, 1);
 row_idx = 0;
