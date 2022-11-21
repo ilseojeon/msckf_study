@@ -81,19 +81,21 @@ inline double AddNoise(double mean, double stddev, double scale) {
 
 inline Eigen::Matrix<double, 3, 1> CalRes(const Eigen::Matrix<double, 6, 1>& state, const Eigen::Matrix<double, 3, 1>& pt, const Eigen::Matrix<double, 3, 1>& pt_prime) {
     Eigen::Matrix<double, 3, 1> res;
-    Eigen::Matrix3d rot_mat;
-    Eigen::Vector3d transition;
-    rot_mat = SO3ExpMap(state.segment(0, 3)).transpose();
-    transition = -rot_mat * state.segment(3, 3);
+    Eigen::Matrix3d R;
+    Eigen::Vector3d t;
+    R = SO3ExpMap(state.segment(0, 3));
+    t = state.segment(3, 3);
 
-    res = pt - (rot_mat * pt_prime - transition);
+    // e = (C1_R_C2 * C2_pt - C1_t_C2) - pt
+    res = (R * pt_prime + t) - pt;
 
     return res;
 }
 
 inline Eigen::Matrix<double, 3, 6> CalJacobian(const Eigen::Matrix<double, 6, 1>& state, const Eigen::Matrix<double, 3, 1>& pt_prime) {
     Eigen::Matrix<double, 3, 6> jacobian;
-
+    
+    // J = [-[Rp]x  I] (3 x 6 mat)
     jacobian.block(0, 0, 3, 3) = -Skew(SO3ExpMap(state.segment(0, 3)).transpose() * pt_prime);
     jacobian.block(0, 3, 3, 3) = Eigen::Matrix3d::Identity(); 
 
@@ -102,6 +104,7 @@ inline Eigen::Matrix<double, 3, 6> CalJacobian(const Eigen::Matrix<double, 6, 1>
 
 inline Eigen::Matrix<double, 6, 1> Caldx(const Eigen::MatrixXd& jacobian, const Eigen::MatrixXd& residual) {
     Eigen::Matrix<double, 6, 1> dx;
+    // dx = (J^T * J)^(-1) * J^T * res
     Eigen::MatrixXd jacobiant_by_jacobian_inverse;
     jacobiant_by_jacobian_inverse = (jacobian.transpose() * jacobian).inverse();
     dx = jacobiant_by_jacobian_inverse * jacobian.transpose() * residual;
@@ -113,15 +116,17 @@ inline Eigen::Matrix<double, 3, 1> RecalRes(const Eigen::Matrix<double, 6, 1>& s
     Eigen::Matrix<double, 3, 1> res;
     auto dR = SO3ExpMap(dx.segment(0, 3));
     auto dt = dx.segment(3, 3);
-    auto R = SO3ExpMap(state.segment(0, 3)).transpose();
-    auto t = -R * state.segment(3, 3);
+    auto R = SO3ExpMap(state.segment(0, 3));
+    auto t = state.segment(3, 3);
 
-    res = pt - (dR * R * pt_prime - t - dt);
+    // res = dR(dr) * C2_R_C1' * C2_pt - C2_R_C1' * C2_t + dt - C1_pt
+    res = (dR * R * pt_prime + t + dt) - pt;
 
     return res;
 }
 
 int main(int argc, char** argv) {
+// C1_R_C2
 Eigen::Matrix<double, 3, 3> SO3;
 SO3 << -1, 0, 0, 
 0, 1, 0, 
@@ -130,24 +135,25 @@ SO3 << -1, 0, 0,
 // HW 1 Get se3 vector
 Eigen::Matrix<double, 3, 1> so3 = so3LogMap(SO3);
 std::cout << "so3 : " << std::endl;
-std::cout << so3 << std::endl;
+std::cout << so3.transpose() << std::endl;
 
+// C1_T_C2
 Eigen::Matrix<double, 6, 1> se3;
 se3 << so3, 10, 0, 0;
 std::cout << "se3 : " << std::endl;
-std::cout << se3 << std::endl;
+std::cout << se3.transpose() << std::endl;
 
 // HW 2 Get initial pose (state)
 Eigen::Matrix<double, 6, 1> initial_pose(se3);
 for (auto& x : initial_pose.segment(0, 3)) {
-    x = x + AddNoise(0.0, 1, 0.01);
+    x = x + AddNoise(0.0, 1, 0.005);
 }
 for (auto& x : initial_pose.segment(3, 3)) {
-    x = x + AddNoise(0.0, 1, 0.01);
+    x = x + AddNoise(0.0, 1, 0.005);
 }
 
 std::cout << "Initial Guess : " << std::endl;
-std::cout << initial_pose << std::endl;
+std::cout << initial_pose.transpose() << std::endl;
 
 // HW 3
 unsigned int num_of_pts = 3;
@@ -159,49 +165,51 @@ pts.emplace_back(0, 2, 3);
 pts.emplace_back(3, 4, 2);
 pts_prime.reserve(num_of_pts);
 
+// pt' = C2_R_C1 * (C1_pt - C1_t)
 for (auto& pt : pts) {
-    auto tmp = SO3.transpose() * pt + SO3.transpose() * se3.segment(3, 3);
+    auto tmp = SO3.transpose() * (pt - se3.segment(3, 3));
     pts_prime.emplace_back(tmp);
 }
-unsigned int row_idx = 0;
+std::cout << "C1_pts : " << std::endl;
+std::cout << pts.at(0).transpose() << std::endl;
+std::cout << pts.at(1).transpose() << std::endl;
+std::cout << pts.at(2).transpose() << std::endl;
+std::cout << "C2_pts : " << std::endl;
+std::cout << pts_prime.at(0).transpose() << std::endl;
+std::cout << pts_prime.at(1).transpose() << std::endl;
+std::cout << pts_prime.at(2).transpose() << std::endl;
 
 // HW 5 Calculate residual and stack them
 Eigen::MatrixXd res;
 res.resize(3 * num_of_pts, 1);
 for (unsigned int i = 0; i < num_of_pts; i++) {
     auto tmp = CalRes(initial_pose, pts.at(i), pts_prime.at(i));
-    res.block(row_idx, 0, tmp.rows(), tmp.cols()) = tmp;
-    row_idx = row_idx + 3;
+    res.block(3 * i, 0, tmp.rows(), tmp.cols()) = tmp;
 }
 
 // HW 6 Calculate jacobian and stack them
 Eigen::MatrixXd jacobian;
 jacobian.resize(3 * num_of_pts, 6);
-row_idx = 0;
 std::cout << "jacobian" << std::endl;
 for (unsigned int i = 0; i < num_of_pts; i++) {
     auto tmp = CalJacobian(initial_pose, pts_prime.at(i));
-    jacobian.block(row_idx, 0, tmp.rows(), tmp.cols()) = tmp;
-    row_idx = row_idx + 3;
+    jacobian.block(3 * i, 0, tmp.rows(), tmp.cols()) = tmp;
 }
 std::cout << jacobian << std::endl;
 
 // HW 7 Calculate dx
 auto dx = Caldx(jacobian, res);
 std::cout << "dx" << std::endl;
-std::cout << dx << std::endl;
+std::cout << dx.transpose() << std::endl;
 
 // HW 8 Calculate new residual
 Eigen::MatrixXd new_res;
 new_res.resize(3 * num_of_pts, 1);
-row_idx = 0;
 for (unsigned int i = 0; i < num_of_pts; i++) {
     auto tmp = RecalRes(initial_pose, dx, pts.at(i), pts_prime.at(i));
-    new_res.block(row_idx, 0, tmp.rows(), tmp.cols()) = tmp;
-    row_idx = row_idx + 3;
+    new_res.block(3 * i, 0, tmp.rows(), tmp.cols()) = tmp;
 }
-std::cout << "residual old" << std::endl;
-std::cout << res << std::endl;
-std::cout << "residual new" << std::endl;
-std::cout << new_res << std::endl;
+std::cout << "residual old - residual new" << std::endl;
+std::cout << res.transpose() << std::endl;
+std::cout << new_res.transpose() << std::endl;
 }

@@ -4,7 +4,7 @@ project(homework LANGUAGES CXX VERSION 0.0.0)
 cmake_policy(SET CMP0015 NEW)
 cmake_policy(SET CMP0064 NEW)
 
-set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -pthread -O0 -w")
+set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -pthread -O3 -w")
 set(CMAKE_CXX_STANDARD 14)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
