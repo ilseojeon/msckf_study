@@ -86,7 +86,7 @@ inline Eigen::Matrix<double, 3, 1> CalRes(const Eigen::Matrix<double, 6, 1>& sta
     R = SO3ExpMap(state.segment(0, 3));
     t = state.segment(3, 3);
 
-    // e = (C1_R_C2 * C2_pt - C1_t_C2) - pt
+    // e = (C1_R_C2 * C2_pt + C1_t_C2) - C1_pt
     res = (R * pt_prime + t) - pt;
 
     return res;
@@ -95,8 +95,8 @@ inline Eigen::Matrix<double, 3, 1> CalRes(const Eigen::Matrix<double, 6, 1>& sta
 inline Eigen::Matrix<double, 3, 6> CalJacobian(const Eigen::Matrix<double, 6, 1>& state, const Eigen::Matrix<double, 3, 1>& pt_prime) {
     Eigen::Matrix<double, 3, 6> jacobian;
     
-    // J = [-[Rp]x  I] (3 x 6 mat)
-    jacobian.block(0, 0, 3, 3) = -Skew(SO3ExpMap(state.segment(0, 3)).transpose() * pt_prime);
+    // J = [-[C1_R_C2 * C2_p]x  I] (3 x 6 mat)
+    jacobian.block(0, 0, 3, 3) = -Skew(SO3ExpMap(state.segment(0, 3)) * pt_prime);
     jacobian.block(0, 3, 3, 3) = Eigen::Matrix3d::Identity(); 
 
     return jacobian;
@@ -107,22 +107,9 @@ inline Eigen::Matrix<double, 6, 1> Caldx(const Eigen::MatrixXd& jacobian, const 
     // dx = (J^T * J)^(-1) * J^T * res
     Eigen::MatrixXd jacobiant_by_jacobian_inverse;
     jacobiant_by_jacobian_inverse = (jacobian.transpose() * jacobian).inverse();
-    dx = jacobiant_by_jacobian_inverse * jacobian.transpose() * residual;
+    dx = -jacobiant_by_jacobian_inverse * jacobian.transpose() * residual;
 
     return dx;
-}
-
-inline Eigen::Matrix<double, 3, 1> RecalRes(const Eigen::Matrix<double, 6, 1>& state, const Eigen::Matrix<double, 6, 1>& dx, const Eigen::Matrix<double, 3, 1>& pt, const Eigen::Matrix<double, 3, 1>& pt_prime) {
-    Eigen::Matrix<double, 3, 1> res;
-    auto dR = SO3ExpMap(dx.segment(0, 3));
-    auto dt = dx.segment(3, 3);
-    auto R = SO3ExpMap(state.segment(0, 3));
-    auto t = state.segment(3, 3);
-
-    // res = dR(dr) * C2_R_C1' * C2_pt - C2_R_C1' * C2_t + dt - C1_pt
-    res = (dR * R * pt_prime + t + dt) - pt;
-
-    return res;
 }
 
 int main(int argc, char** argv) {
@@ -137,7 +124,7 @@ Eigen::Matrix<double, 3, 1> so3 = so3LogMap(SO3);
 std::cout << "so3 : " << std::endl;
 std::cout << so3.transpose() << std::endl;
 
-// C1_T_C2
+// C1_se3_C2
 Eigen::Matrix<double, 6, 1> se3;
 se3 << so3, 10, 0, 0;
 std::cout << "se3 : " << std::endl;
@@ -146,10 +133,10 @@ std::cout << se3.transpose() << std::endl;
 // HW 2 Get initial pose (state)
 Eigen::Matrix<double, 6, 1> initial_pose(se3);
 for (auto& x : initial_pose.segment(0, 3)) {
-    x = x + AddNoise(0.0, 1, 0.005);
+    x = x + AddNoise(0.0, 0.05, 0.005);
 }
 for (auto& x : initial_pose.segment(3, 3)) {
-    x = x + AddNoise(0.0, 1, 0.005);
+    x = x + AddNoise(0.0, 0.1, 0.001);
 }
 
 std::cout << "Initial Guess : " << std::endl;
@@ -165,7 +152,7 @@ pts.emplace_back(0, 2, 3);
 pts.emplace_back(3, 4, 2);
 pts_prime.reserve(num_of_pts);
 
-// pt' = C2_R_C1 * (C1_pt - C1_t)
+// pt' = C2_R_C1 * (C1_pt - C1_t_C2)
 for (auto& pt : pts) {
     auto tmp = SO3.transpose() * (pt - se3.segment(3, 3));
     pts_prime.emplace_back(tmp);
@@ -203,13 +190,57 @@ std::cout << "dx" << std::endl;
 std::cout << dx.transpose() << std::endl;
 
 // HW 8 Calculate new residual
+//Eigen::Matrix<double, 6, 1> new_pose;
+//new_pose.segment(0, 3) = so3LogMap(SO3ExpMap(initial_pose.segment(0, 3)) * SO3ExpMap(dx.segment(0, 3)));
+//new_pose.segment(3, 3) = initial_pose.segment(3, 3) + dx.segment(3, 3);
+//std::cout << "new pose : " << std::endl;
+//std::cout << new_pose.transpose() << std::endl;
+//
+//Eigen::MatrixXd new_res;
+//new_res.resize(3 * num_of_pts, 1);
+//for (unsigned int i = 0; i < num_of_pts; i++) {
+//    auto tmp = CalRes(new_pose, pts.at(i), pts_prime.at(i));
+//    new_res.block(3 * i, 0, tmp.rows(), tmp.cols()) = tmp;
+//}
+//std::cout << "residual old - residual new" << std::endl;
+//std::cout << res.transpose() * res<< std::endl;
+//std::cout << new_res.transpose() * new_res << std::endl;
+
+// HW 9 Iteration
+Eigen::Matrix<double, 6, 1> new_pose;
+Eigen::MatrixXd old_res;
+old_res.resize(3 * num_of_pts, 1);
+old_res = res;
 Eigen::MatrixXd new_res;
 new_res.resize(3 * num_of_pts, 1);
-for (unsigned int i = 0; i < num_of_pts; i++) {
-    auto tmp = RecalRes(initial_pose, dx, pts.at(i), pts_prime.at(i));
-    new_res.block(3 * i, 0, tmp.rows(), tmp.cols()) = tmp;
+Eigen::MatrixXd res_diff;
+unsigned int kNumOfIteration = 100;
+unsigned int iteration = 0;
+const double kDelta = 1e-6;
+while (iteration < kNumOfIteration) {
+    iteration++;
+    new_pose.segment(0, 3) = so3LogMap(SO3ExpMap(initial_pose.segment(0, 3)) * SO3ExpMap(dx.segment(0, 3)));
+    new_pose.segment(3, 3) = initial_pose.segment(3, 3) + dx.segment(3, 3);
+
+    for (unsigned int i = 0; i < num_of_pts; i++) {
+        auto tmp = CalRes(new_pose, pts.at(i), pts_prime.at(i));
+        new_res.block(3 * i, 0, tmp.rows(), tmp.cols()) = tmp;
+    }
+    res_diff = old_res - new_res;
+    old_res = new_res;
+
+    if (res_diff.norm() < kDelta)  {
+        std::cout << "Completed Iteration" << std::endl;
+        std::cout << "Num of iteration : " << iteration << std::endl;
+        std::cout << "New pose : " << new_pose.transpose() << std::endl;
+        break;
+    }
+
+    if (res.norm() < new_res.norm()) {
+        std::cout << "Diverged" << std::endl;
+        break;
+    }
 }
-std::cout << "residual old - residual new" << std::endl;
-std::cout << res.transpose() << std::endl;
-std::cout << new_res.transpose() << std::endl;
+
+return 0;
 }
