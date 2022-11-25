@@ -26,11 +26,21 @@ inline Eigen::Matrix<double, 3, 1> CalRes(const Eigen::Matrix<double, 6, 1>& sta
     return res;
 }
 
-inline Eigen::Matrix<double, 3, 6> CalJacobian(const Eigen::Matrix<double, 6, 1>& state, const Eigen::Matrix<double, 3, 1>& pt_prime) {
+inline Eigen::Matrix<double, 3, 6> CalLeftJacobian(const Eigen::Matrix<double, 6, 1>& state, const Eigen::Matrix<double, 3, 1>& pt_prime) {
     Eigen::Matrix<double, 3, 6> jacobian;
 
     // J = [-[C1_R_C2 * C2_p]x  I] (3 x 6 mat)
     jacobian.block(0, 0, 3, 3) = -msckf_math::Skew(msckf_math::SO3ExpMap(state.segment(0, 3)) * pt_prime);
+    jacobian.block(0, 3, 3, 3) = Eigen::Matrix3d::Identity();
+
+    return jacobian;
+}
+
+inline Eigen::Matrix<double, 3, 6> CalRightJacobian(const Eigen::Matrix<double, 6, 1>& state, const Eigen::Matrix<double, 3, 1>& pt_prime) {
+    Eigen::Matrix<double, 3, 6> jacobian;
+
+    // J = [-[C1_R_C2 * C2_p]x  I] (3 x 6 mat)
+    jacobian.block(0, 0, 3, 3) = -msckf_math::Skew(msckf_math::SO3ExpMap(-state.segment(0, 3)) * pt_prime);
     jacobian.block(0, 3, 3, 3) = Eigen::Matrix3d::Identity();
 
     return jacobian;
@@ -114,13 +124,15 @@ int main(int argc, char** argv) {
         auto tmp = CalRes(initial_pose, pts.at(i), pts_prime.at(i));
         initial_res.block(3 * i, 0, tmp.rows(), tmp.cols()) = tmp;
     }
+    std::cout << "initial residual : " << std::endl;
+    std::cout << initial_res.transpose() << std::endl;
 
     // HW 6 Calculate jacobian and stack them
     Eigen::MatrixXd initial_jacobian;
     initial_jacobian.resize(3 * num_of_pts, 6);
     std::cout << "jacobian" << std::endl;
     for (unsigned int i = 0; i < num_of_pts; i++) {
-        auto tmp = CalJacobian(initial_pose, pts_prime.at(i));
+        auto tmp = CalLeftJacobian(initial_pose, pts_prime.at(i));
         initial_jacobian.block(3 * i, 0, tmp.rows(), tmp.cols()) = tmp;
     }
     std::cout << initial_jacobian << std::endl;
@@ -159,7 +171,7 @@ int main(int argc, char** argv) {
     new_jacobian.resize(3 * num_of_pts, 6);
     Eigen::MatrixXd new_dx;
 
-    unsigned int kNumOfIteration = 100;
+    const unsigned int kNumOfIteration = 100;
     unsigned int iteration = 0;
     const double kDelta = 1e-6;
 
@@ -168,15 +180,16 @@ int main(int argc, char** argv) {
             auto tmp = CalRes(pose, pts.at(i), pts_prime.at(i));
             new_res.block(3 * i, 0, tmp.rows(), tmp.cols()) = tmp;
         }
-        res_diff = old_res - new_res;
-        old_res = new_res;
 
         for (unsigned int i = 0; i < num_of_pts; i++) {
-            auto tmp = CalJacobian(pose, pts_prime.at(i));
+            auto tmp = CalLeftJacobian(pose, pts_prime.at(i));
             new_jacobian.block(3 * i, 0, tmp.rows(), tmp.cols()) = tmp;
         }
         new_dx = Caldx(new_jacobian, new_res);
         new_pose = Update(pose, new_dx);
+
+        res_diff = old_res - new_res;
+        old_res = new_res;
 
         if (res_diff.norm() < kDelta)  {
             std::cout << "Completed Iteration" << std::endl;
@@ -185,7 +198,7 @@ int main(int argc, char** argv) {
             break;
         }
 
-        if (initial_res.norm() < new_res.norm()) {
+        if (old_res.norm() < new_res.norm()) {
             std::cout << "Diverged" << std::endl;
             break;
         }
