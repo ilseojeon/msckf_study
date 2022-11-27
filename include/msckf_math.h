@@ -74,5 +74,93 @@ namespace msckf_math {
         return SO3;
     }
 
+    inline Eigen::Matrix<double, 4, 4> SE3ExpMap(const Eigen::Matrix<double, 6, 1>& se3) {
+        Eigen::Vector<double, 3> omega_vector = se3.head(3);
+        Eigen::Vector<double, 3> u_vector = se3.tail(3);
+        double theta = sqrt(omega_vector.dot(omega_vector));
+        Eigen::Matrix<double, 3, 3> omega_vec_skew = Skew(omega_vector);
+
+        // Calculate coefficients in the formula
+        double a1;
+        double a2;
+        double a3;
+
+        if (theta < 1e-7) {
+            a1 = 1;
+            a2 = 0.5;
+            a3 = 1.0 / 6.0;
+        } else {
+            a1 = sin(theta) / theta;
+            a2 = (1 - cos(theta)) / (theta * theta);
+            a3 = (1 - a1) / (theta * theta);
+        }
+
+        // Define identity matrix and V matrix to complete the formula
+        Eigen::Matrix<double, 3, 3> identity_mat_3x3 = Eigen::Matrix3d::Identity();
+        Eigen::Matrix<double, 3, 3> v_mat = identity_mat_3x3 + a2 * omega_vec_skew +
+                                       a3 * omega_vec_skew * omega_vec_skew;
+
+        Eigen::Matrix<double, 4, 4> se3_exp_rot_mat = Eigen::Matrix4d::Zero();
+        se3_exp_rot_mat.block(0, 0, 3, 3) = identity_mat_3x3 + a1 * omega_vec_skew +
+                                            a2 * omega_vec_skew * omega_vec_skew;
+        se3_exp_rot_mat.block(0, 3, 3, 1) = v_mat * u_vector;
+        se3_exp_rot_mat(3, 3) = 1;
+
+        return se3_exp_rot_mat;
+    }
+
+    inline Eigen::Matrix<double, 6, 1> se3LogMap(const Eigen::Matrix<double, 4, 4>& mat) {
+//        // @todo Solve a problem of eigen block malfunction inside a function defined
+//        // with template.
+//        Eigen::Matrix<double, 3, 3> SE3_rot;
+//        SE3_rot << SE3(0, 0), SE3(0, 1), SE3(0, 2), SE3(1, 0), SE3(1, 1), SE3(1, 2),
+//                SE3(2, 0), SE3(2, 1), SE3(2, 2);
+//
+//        Eigen::Vector<double, 3> so3_log_vector = so3LogMap(SE3_rot);
+//        const double so3_log_vector_norm = so3_log_vector.norm();
+//
+//        Eigen::Vector<double, 3> transition;
+//        transition << SE3(0, 3), SE3(1, 3), SE3(2, 3);
+//
+//        Eigen::Matrix<double, 6, 1> se3_log;
+//        if (so3_log_vector_norm < 1e-10) {
+//            se3_log << so3_log_vector, transition;
+//            return se3_log;
+//        } else {
+//            Eigen::Matrix<double, 3, 3> so3_log_skew_mat =
+//                    Skew(so3_log_vector / so3_log_vector_norm);
+//            double tangential = tan(0.5 * so3_log_vector_norm);
+//            Eigen::Vector<double, 3> so3_log_skew_mat_by_transition =
+//                    so3_log_skew_mat * transition;
+//            Eigen::Vector<double, 3> u_vector =
+//                    transition -
+//                    (0.5 * so3_log_vector_norm) * so3_log_skew_mat_by_transition +
+//                    (1 - so3_log_vector_norm / (2. * tangential)) *
+//                    (so3_log_skew_mat * so3_log_skew_mat_by_transition);
+//            se3_log << so3_log_vector, u_vector;
+//            return se3_log;
+//        }
+        Eigen::Vector3d w = so3LogMap(mat.block<3, 3>(0, 0));
+        Eigen::Vector3d T = mat.block<3, 1>(0, 3);
+        const double t = w.norm();
+        if (t < 1e-10) {
+            Eigen::Matrix<double, 6, 1> log;
+            log << w, T;
+            return log;
+        } else {
+            Eigen::Matrix3d W = Skew(w / t);
+            // Formula from Agrawal06iros, equation (14)
+            // simplified with Mathematica, and multiplying in T to avoid matrix math
+            double Tan = tan(0.5 * t);
+            Eigen::Vector3d WT = W * T;
+            Eigen::Vector3d u = T - (0.5 * t) * WT + (1 - t / (2. * Tan)) * (W * WT);
+            Eigen::Matrix<double, 6, 1> log;
+            log << w, u;
+            return log;
+        }
+    }
+
+
+
 }
 #endif //MSCKF_STUDY_TRANSFORMATION_H

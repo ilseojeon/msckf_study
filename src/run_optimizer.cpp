@@ -10,7 +10,7 @@ inline double AddNoise(double mean, double stddev, double scale) {
     // Define random generator with Gaussian distribution
     std::default_random_engine generator;
     std::normal_distribution<double> dist(mean, stddev);
-    return scale * dist(generator);  
+    return scale * dist(generator);
 }
 
 inline Eigen::Matrix<double, 3, 1> CalRes(const Eigen::Matrix<double, 6, 1>& state, const Eigen::Matrix<double, 3, 1>& pt, const Eigen::Matrix<double, 3, 1>& pt_prime) {
@@ -48,7 +48,7 @@ inline Eigen::Matrix<double, 3, 6> CalRightJacobian(const Eigen::Matrix<double, 
 
 inline Eigen::Matrix<double, 6, 1> Caldx(const Eigen::MatrixXd& jacobian, const Eigen::MatrixXd& residual) {
     Eigen::Matrix<double, 6, 1> dx;
-    // dx = (J^T * J)^(-1) * J^T * res
+    // dx = -(J^T * J)^(-1) * J^T * res
     Eigen::MatrixXd jacobiant_by_jacobian_inverse;
     jacobiant_by_jacobian_inverse = (jacobian.transpose() * jacobian).inverse();
     dx = -jacobiant_by_jacobian_inverse * jacobian.transpose() * residual;
