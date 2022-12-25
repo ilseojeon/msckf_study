@@ -11,7 +11,7 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 find_package(Eigen3 REQUIRED)
 set(EIGEN_INCLUDE "/usr/local/include/eigen3/")
 
-add_executable(${PROJECT_NAME}_run_joint_optimizer src/run_optimizer.cpp)
+add_executable(${PROJECT_NAME}_run_joint_optimizer src/run_joint_optimizer.cpp)
 target_link_libraries(${PROJECT_NAME}_run_joint_optimizer
         ${EIGEN_LIBS})
 target_include_directories(${PROJECT_NAME}_run_joint_optimizer PUBLIC
